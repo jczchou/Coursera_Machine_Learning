@@ -1,0 +1,104 @@
+---
+title: Practical Machine Learning Project - Quantified Self Movement Data Analysis
+author: "Jay Chou"
+output:
+  html_document:
+    fig_height: 9
+    fig_width: 9
+---
+
+## Introduction  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+The goal of the project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. A report describing how I built the model follows, how I used cross validation, what I think the expected out of sample error is, and why I made the choices. A prediction model to predict 20 different test cases is also presented.  
+
+## Load the relvant libraries
+```{r, cache = T}
+library(caret)
+library(corrplot)
+library(randomForest)
+#library(rpart)
+#library(rpart.plot)
+```
+### Get the source CSV files, training and test
+```{r, cache = T}
+trainFile <- "./data/pml-training.csv"
+testFile  <- "./data/pml-testing.csv"
+```  
+### Read the Data
+Read the two csv files into two data frames.  
+```{r, cache = T}
+IntrainRAW <- read.csv("./data/pml-training.csv")
+IntestRAW <- read.csv("./data/pml-testing.csv")
+dim(IntrainRAW)
+dim(IntestRAW)
+```
+The training data has 19622 observations and 160 variables.
+The testing data has 20 observations and 160 variables. 
+The "classe" variable in the training set is the outcome to predict. 
+
+### Clean the data
+
+```{r, cache = T}
+sum(complete.cases(IntrainRAW))
+```
+Remove all columns that contain NA missing values.
+```{r, cache = T}
+IntrainRAW <- IntrainRAW[, colSums(is.na(IntrainRAW)) == 0] 
+IntestRAW <- IntestRAW[, colSums(is.na(IntestRAW)) == 0] 
+```  
+Next, we get rid of some columns that do not contribute much to the accelerometer measurements.
+```{r, cache = T}
+classe <- IntrainRAW$classe
+trainRemove <- grepl("^X|timestamp|window|user_name", names(IntrainRAW))
+IntrainRAW <- IntrainRAW[, !trainRemove]
+trainCleaned <- IntrainRAW[, sapply(IntrainRAW, is.numeric)]
+trainCleaned$classe <- classe
+testRemove <- grepl("^X|timestamp|window|user_name", names(IntestRAW))
+IntestRAW <- IntestRAW[, !testRemove]
+testCleaned <- IntestRAW[, sapply(IntestRAW, is.numeric)]
+```
+
+
+### Set training and validation data
+Slice training set into a training data set (60%) and a validation set (40%). 
+```{r, cache = T}
+set.seed(25322) # For reproducibile purpose
+inTrain <- createDataPartition(trainCleaned$classe, p=0.60, list=F)
+trainData <- trainCleaned[inTrain, ]
+testData <- trainCleaned[-inTrain, ]
+```
+
+## Data Modeling
+I use the **Random Forest** algorithm for rpedicting the movement due to the ease of its vairable selection. Further, I will use **5-fold cross validation** when applying the algorithm.  
+```{r, cache = T}
+controlRf <- trainControl(method="cv", 5)
+modelRf <- train(classe ~ ., data=trainData, method="rf", trControl=controlRf, ntree=250)
+modelRf
+```
+Then, we estimate the performance of the model on the validation data set.  
+```{r, cache = T}
+predictRf <- predict(modelRf, testData)
+confusionMatrix(testData$classe, predictRf)
+```
+```{r, cache = T}
+accuracy <- postResample(predictRf, testData$classe)
+accuracy
+oose <- 1 - as.numeric(confusionMatrix(testData$classe, predictRf)$overall[1])
+oose
+```
+So, the estimated accuracy of the model is 99.42% and the estimated out-of-sample error is 0.58%.
+
+## Predicting for Test Data Set
+Now, we apply the model to the original testing data set downloaded from the data source. We remove the `problem_id` column first.  
+```{r, cache = T}
+result <- predict(modelRf, testCleaned[, -length(names(testCleaned))])
+result
+```  
+
+## Appendix: Figure
+Correlation Matrix Visualization  
+```{r, cache = T}
+corrPlot <- cor(trainData[, -length(names(trainData))])
+corrplot(corrPlot, method="color")
+```
